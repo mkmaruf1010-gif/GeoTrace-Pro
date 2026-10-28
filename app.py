@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 # Page Config
 st.set_page_config(
     page_title="GeoTrace Pro - Field Survey Tracker",
-    page_icon="",
+    page_icon="🗺️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -29,15 +29,15 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Field Instructions:")
 st.sidebar.markdown(
     """
-1. Allow **Location Permission** when prompted by your mobile browser.
-2. Tap **"Locate Me"** to verify your current position on the map.
-3. Tap **"Start Tracking"** right before walking or driving along the road.
+1. Allow Location Permission when prompted by your mobile browser.
+2. Tap 'Locate Me' to verify your current position on the map.
+3. Tap 'Start Tracking' right before walking or driving along the road.
 4. The app will automatically render a blue vector polyline as you move.
-5. Tap **"Stop Tracking"** and click **"Export GeoJSON"** to save your spatial vector file.
+5. Tap 'Stop Tracking' and click 'Export GeoJSON' to save your spatial vector file.
 """
 )
 
-# Embed Custom HTML/JS Field Tracking Component in English
+# Custom HTML/JS Field Tracking Component (Using standard string formatting instead of complex f-string blocks to avoid syntax errors)
 html_code = f"""
 <!DOCTYPE html>
 <html>
@@ -85,14 +85,190 @@ html_code = f"""
         let trackPoints = [];
         const MAX_ACCURACY = {min_accuracy};
 
-        // Initialize Leaflet Map (Default center: Dhaka, shifts to user location on locate)
+        // Initialize Leaflet Map
         function initMap() {{
             map = L.map('map').setView([23.8103, 90.4125], 14);
             
-            // OpenStreetMap Tile Layer
             L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap Contributors'
             }}).addTo(map);
 
             polyline = L.polyline([], {{ color: '#3b82f6', weight: 6, opacity: 0.9 }}).addTo(map);
+        }}
+
+        initMap();
+
+        function locateMe() {{
+            if (!navigator.geolocation) {{
+                alert("Geolocation is not supported by your browser!");
+                return;
+            }}
+
+            document.getElementById('status').innerText = "Fetching Location...";
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {{
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const acc = position.coords.accuracy;
+                    const point = [lat, lng];
+
+                    document.getElementById('accuracy').innerText = Math.round(acc) + " m";
+                    document.getElementById('status').innerText = "Location Found";
+                    document.getElementById('status').className = "font-bold text-indigo-400";
+
+                    map.setView(point, 17);
+
+                    if (!locateMarker) {{
+                        locateMarker = L.circleMarker(point, {{
+                            radius: 10,
+                            fillColor: "#3b82f6",
+                            color: "#ffffff",
+                            weight: 3,
+                            fillOpacity: 0.9
+                        }}).addTo(map).bindPopup("<b>You are here!</b>").openPopup();
+                    }} else {{
+                        locateMarker.setLatLng(point).bindPopup("<b>You are here!</b>").openPopup();
+                    }}
+                }},
+                (err) => {{
+                    console.error(err);
+                    alert("GPS Error: " + err.message);
+                    document.getElementById('status').innerText = "GPS Failed";
+                }},
+                {{
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }}
+            );
+        }}
+
+        function startTracking() {{
+            if (!navigator.geolocation) {{
+                alert("Geolocation is not supported by your browser!");
+                return;
+            }}
+
+            document.getElementById('startBtn').classList.add('hidden');
+            document.getElementById('stopBtn').classList.remove('hidden');
+            document.getElementById('status').innerText = "Tracking Live...";
+            document.getElementById('status').className = "font-bold text-emerald-400 animate-pulse";
+
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {{
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const acc = position.coords.accuracy;
+                    const alt = position.coords.altitude || 0;
+                    const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) : 0;
+
+                    document.getElementById('accuracy').innerText = Math.round(acc) + " m";
+                    document.getElementById('speed').innerText = speed + " km/h";
+
+                    if (acc > MAX_ACCURACY) return;
+
+                    const point = [lat, lng];
+                    trackPoints.push({{
+                        lat: lat,
+                        lng: lng,
+                        alt: alt,
+                        acc: acc,
+                        timestamp: new Date().toISOString()
+                    }});
+
+                    document.getElementById('pointCount').innerText = trackPoints.length;
+
+                    polyline.addLatLng(point);
+
+                    if (!currentMarker) {{
+                        currentMarker = L.circleMarker(point, {{
+                            radius: 8,
+                            fillColor: "#ef4444",
+                            color: "#ffffff",
+                            weight: 2,
+                            fillOpacity: 1
+                        }}).addTo(map);
+                    }} else {{
+                        currentMarker.setLatLng(point);
+                    }}
+
+                    map.setView(point, 18);
+                }},
+                (err) => {{
+                    console.error(err);
+                }},
+                {{
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 10000
+                }}
+            );
+        }}
+
+        function stopTracking() {{
+            if (watchId !== null) {{
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }}
+            document.getElementById('startBtn').classList.remove('hidden');
+            document.getElementById('stopBtn').classList.add('hidden');
+            document.getElementById('status').innerText = "Paused / Stopped";
+            document.getElementById('status').className = "font-bold text-rose-400";
+        }}
+
+        function clearTrack() {{
+            stopTracking();
+            trackPoints = [];
+            polyline.setLatLngs([]);
+            if (currentMarker) map.removeLayer(currentMarker);
+            if (locateMarker) map.removeLayer(locateMarker);
+            document.getElementById('pointCount').innerText = "0";
+            document.getElementById('accuracy').innerText = "-- m";
+            document.getElementById('speed').innerText = "0 km/h";
+            document.getElementById('status').innerText = "Idle";
+            document.getElementById('status').className = "font-bold text-amber-400";
+        }}
+
+        function exportGeoJSON() {{
+            if (trackPoints.length === 0) {{
+                alert("No GPS data points recorded yet!");
+                return;
+            }}
+
+            const geojson = {{
+                "type": "FeatureCollection",
+                "features": [
+                    {{
+                        "type": "Feature",
+                        "geometry": {{
+                            "type": "LineString",
+                            "coordinates": trackPoints.map(p => [p.lng, p.lat, p.alt])
+                        }},
+                        "properties": {{
+                            "road_name": "{road_name}",
+                            "surveyor": "{surveyor}",
+                            "recorded_points": trackPoints.length,
+                            "start_time": trackPoints[0].timestamp,
+                            "end_time": trackPoints[trackPoints.length - 1].timestamp
+                        }}
+                    }}
+                ]
+            }};
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojson, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "{road_name}_track_" + Date.now() + ".geojson");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }}
+    </script>
+</body>
+</html>
+"""
+
+# Render HTML Component in Streamlit
+components.html(html_code, height=620, scrolling=False)
